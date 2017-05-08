@@ -88,39 +88,54 @@ class IndexModel {
 		switch ($xmlobj->Event) {
 			//接收关注事件
 			case 'subscribe':
-				//下发欢迎语
-				$contents = "嗨～！终于等到你，从此慕课吧助你在互联网业掘金一臂之力。\n 慕课吧的“原创情怀”，走心推肾！玩的就是免费，就是这么任性！";
+				$jsoninfo = $this ->getUserInfo($xmlobj);
+				$nickname = $jsoninfo["nickname"];//昵称
+				$logourl  = $jsoninfo['headimgurl'];//头像
+				$openid   = $jsoninfo['openid'];
+				$sex	  = ($jsoninfo["sex"]==1)?"男":(($jsoninfo["sex"]==2)?"女":"未知");
+				$country  = $jsoninfo["country"];
+				$province = $jsoninfo["province"];
+				$city 	  = $jsoninfo["city"];
+				$region   = $country.$province.$city;
+				$language = ($jsoninfo["language"] == "zh_CN")?"简体中文":"非简体中文";
+				$subscribe_time = date('Y-m-d',$jsoninfo["subscribe_time"]);
+				$contents = "";
+				$contents = "您好，".$nickname."\n"."您的logo是：".$logourl."\n"."您的openID是：".$openid."\n"."性别：".$sex."\n"."地区：".$country." ".$province." ".$city."\n"."语言：".$language."\n"."关注：".$subscribe_time;
+				
+				require './conn/conn.php';
+				$sql = "INSERT INTO userinfo(nickname,openid,sex,region,subscribe_time,logourl,vip) VALUES('$nickname','$openid','$sex','$region','$subscribe_time','$logourl',1)";
+				$mysqli->query($sql);
+				$mysqli->close();
 				return $this->responseTxt($xmlobj,$contents);
 				break;
 			//接收取消关注事件
 			case 'unsubscribe':
 				//账号的解绑
+				$jsoninfo = $this ->getUserInfo($xmlobj);
+				$openid   = $jsoninfo['openid'];
+				require './conn/conn.php';
+				$sql = "DELETE FROM userinfo WHERE openid=?;";
+				$stmt = $mysqli->prepare($sql);  
+				$stmt->bind_param('s', $openid);  
+				$stmt->execute();   
+				$stmt->close();  
 				break;
 			//点击事件
 			case 'CLICK':
 				switch($xmlobj->EventKey)
-				{
-					case 'STORY':
-						//回复一个图文消息
-						$newsArr = array(
-							 array(
-								'Title'=>"约吗？亲！",
-								'Description'=>"玩的就是免费，就是这么任性！",
-								'PicUrl'=>"http://1.moocba.applinzi.com/img/yuema.jpg",
-								'Url'=>"http://www.moocba.com/article/6"
-							 ),
-							 array(
-								'Title'=>"大圣归来之暑期来了",
-								'Description'=>"很久很久以前… 悟空被压在五指山下打工",
-								'PicUrl'=>"http://1.moocba.applinzi.com/img/shuqi.jpg",
-								'Url'=>"http://www.moocba.com/article/8"
-							 )								 
-					    );					
-						return $this->replyNews($xmlobj,$newsArr);						
-						break;
-					case 'MMD':
-						return $this->responseTxt($xmlobj,"么么哒~~~");
-						break;
+				{					
+					case 'keji':
+					//$QueryType = 'keji';
+					return $this->getNewsFromApi($xmlobj,'keji');
+					break;
+					case 'shishang':
+					//$QueryType = 'shishang';
+					return $this->getNewsFromApi($xmlobj,'shishang');
+					break;
+					case 'yule':
+					//$QueryType = 'yule';
+					return $this->getNewsFromApi($xmlobj,'yule');
+					break;
 				}
 				break;
 			default:
@@ -129,45 +144,26 @@ class IndexModel {
 			}			
 	}//end receiveEvent
 
-	//接收文本消息
+	//接收文本消息，电话号码
 	public function receiveText($xmlobj){
-		$content = trim($xmlobj->Content); //获取文本消息的内容
-		//关键字回复
-		switch ($content) {
-			case '军哥':
-				return $this->responseTxt($xmlobj,"TEL：13803457556 \n QQ：413920268 \n 微信号：wx_jayjun");
-				break;
-			case '慕课吧':
-				$picArr = array('mediaId'=>"VG0JIK-horsHow7kxi1F3MJF7QPs5d69h_LkUfY8Z5h_xeR_QNL4BbbUUxtDxuZD");
-				return $this->replyImage($xmlobj,$picArr);
-				break;	
-			case '图文':
-				$newsArr = array(
-								 array(
-									'Title'=>"约吗？亲！",
-									'Description'=>"玩的就是免费，就是这么任性！",
-									'PicUrl'=>"http://1.moocba.applinzi.com/img/yuema.jpg",
-									'Url'=>"http://www.moocba.com/article/6"
-								 ),
-								 array(
-									'Title'=>"大圣归来之暑期来了",
-									'Description'=>"很久很久以前… 悟空被压在五指山下打工",
-									'PicUrl'=>"http://1.moocba.applinzi.com/img/shuqi.jpg",
-									'Url'=>"http://www.moocba.com/article/8"
-								 ),
-								 array(
-									'Title'=>"大圣归来之暑期来了",
-									'Description'=>"很久很久以前… 悟空被压在五指山下打工",
-									'PicUrl'=>"http://1.moocba.applinzi.com/img/shuqi.jpg",
-									'Url'=>"http://www.moocba.com/article/8"
-								 )									 
-						   );					
-				return $this->responseTxt($xmlobj,$newsArr);
-				break;			
-			default:
-				return $this->responseTxt($xmlobj,$content);
-				break;
-		}
+		
+		$mobile = trim($xmlobj->Content); //获取文本消息的内容
+		if (preg_match('#^13[\d]{9}$|^14[5,7]{1}\d{8}$|^15[^4]{1}\d{8}$|^17[0,6,7,8]{1}\d{8}$|^18[\d]{9}$#', $mobile)) {
+			$jsoninfo = $this ->getUserInfo($xmlobj);
+			$openid   = $jsoninfo['openid'];
+			require './conn/conn.php';
+			$sql = "UPDATE userinfo SET phone=? WHERE openid=?;";
+			$stmt = $mysqli->prepare($sql);
+			$stmt->bind_param('ss',$mobile,$openid);  
+			$stmt->execute();   
+			$stmt->close();  
+			$contents = "已经收到您的电话号码!";
+			return $this->responseTxt($xmlobj,$contents);
+        	
+   	    }else{
+   	    	$contents = "您输入的电话号码有误!";
+			return $this->responseTxt($xmlobj,$contents);
+   	    }
 	}//end receiveText
 
 	//回复单文本的封装函数,也可以作为回复关注事件推送的函数
@@ -191,12 +187,21 @@ class IndexModel {
 	//接收图片消息
 	public function receiveImage($xmlobj){
 		$picUrl = $xmlobj->PicUrl;//获取图片的URL
-		$mediaId =$xmlobj->MediaId;//获取图片消息媒体id
-		$picArr = array('picUrl'=>$picUrl,'mediaId'=>$mediaId);
-		return $this->replyImage($xmlobj,$picArr);
+		//$mediaId =$xmlobj->MediaId;//获取图片消息媒体id
+		$jsoninfo = $this ->getUserInfo($xmlobj);
+		$openid   = $jsoninfo['openid'];
+		require './conn/conn.php';
+		$sql = "UPDATE userinfo SET imageurl=? WHERE openid=?;";
+		$stmt = $mysqli->prepare($sql);
+		$stmt->bind_param('ss',$picUrl,$openid);  
+		$stmt->execute();   
+		$stmt->close();  
+		//$picArr = array('picUrl'=>$picUrl,'mediaId'=>$mediaId);
+		$contents = "已经收到您发送的图片!";
+		return $this->responseTxt($xmlobj,$contents);
+		//return $this->replyImage($xmlobj,$picArr);
 		// return $this->replyText($obj,$mediaId);
 	}//end receiveImage
-
 	//回复图片消息
 	public function replyImage($xmlobj,$array){
 		//回复图片消息
@@ -239,7 +244,17 @@ class IndexModel {
 		//注意模板中的中括号 不能少 也不能多
 		return sprintf($template, $toUser, $fromUser, time(), 'news');
 	}//responseImage_Txt end
-	
+
+	//获取用户信息
+	public function getUserInfo($postObj)
+	{
+		$access_token = $this->getWxAccessToken();
+		//$openid = "oaGl9wJIq5Gz67X504HRNvdJQBBA";
+		$openid = $postObj->FromUserName;////获取发送对象账号
+		$url = "https://api.weixin.qq.com/cgi-bin/user/info?access_token=$access_token&openid=$openid&lang=zh_CN";
+		$res =$this->http_curl($url,'get','json');
+		return $res;
+	}//end getUserInfo
 	/*优化curl函数，使其更加完备
 	*$curl   接口URL	  string
 	*$type  请求类型   post/get
@@ -303,11 +318,65 @@ class IndexModel {
 			return $access_token;
 		}
 	}//end getWxAccessToken
+
+///////////////////////////////
 	//自定义菜单创建
-	public function menu_create($post){
+	public function menu_create(){
 		$access_token = $this->getWxAccessToken();
-		$url = "https://api.weixin.qq.com/cgi-bin/menu/create?access_token={$access_token}";
-		return $this->http_curl($url,$post);
+		$url = "https://api.weixin.qq.com/cgi-bin/menu/create?access_token=".$access_token;
+		$postArr = array(
+			"button"=>array(
+				array(
+					"name"=>urlencode("杭州天气"),
+					"type"=>"view",
+					 "url"=>"http://m.hao123.com/a/tianqi",
+				),//第1个一级菜单
+				array(
+					"name"=>urlencode("新闻咨询"),
+					"sub_button"=>array(
+						array(
+							"name"=>urlencode("科技"),
+							"type"=>"click",
+							"key"=>"keji",
+							),
+						array(
+							"name"=>urlencode("时尚"),
+							"type"=>"click",
+							"key"=>"shishang",
+							),	
+						array(
+							"name"=>urlencode("娱乐"),
+							"type"=>"click",
+							"key"=>"yule",
+							),	
+						/*array(
+							"name"=>urlencode("军事"),
+							"type"=>"click",
+							"key"=>"junshi",
+							),
+						array(
+							"name"=>urlencode("国内"),
+							"type"=>"click",
+							"key"=>"guonei",
+							),					*/
+						)//第2个一级菜单的两个2级菜单
+				),//第2个一级菜单
+				array(
+					"name"=>urlencode("捷峰电子"),
+					"type"=>"view",
+					"url"=>"http://www.smartbc.cn/jfdz",
+				)//第3个一级菜单
+			),
+			);
+		//echo '<hr/>';
+		//var_dump($postArr);
+		//echo '<hr/>';
+	    $postJson = urldecode(json_encode($postArr));
+		//echo '<hr/>';
+		$res = $this->http_curl($url,'post','json',$postJson);
+		return $res;
+		//var_dump($res);
+		// return $this->http_curl($url,$post);
 	}//end menu_create
 	//自定义菜单查询
 	public function menu_select(){
@@ -321,7 +390,7 @@ class IndexModel {
 		$url = "https://api.weixin.qq.com/cgi-bin/menu/delete?access_token={$access_token}";
 		return $this->http_curl($url);
 	}//end menu_delete
-
+//////////////////////////
 
 	//回复微信用户的关注事件
 	public function responseSubscribe($postObj,$arr){
@@ -329,7 +398,7 @@ class IndexModel {
 	}//responseSubscribe end
 	//关于新闻而专门写的类
 	public function responseNews($postObj,$arrres){
-		$toUser = $postObj->FromUserName;
+		$toUser   = $postObj->FromUserName;
 		$fromUser = $postObj->ToUserName;
 		
 		//$time   = time();
@@ -383,7 +452,7 @@ class IndexModel {
 		}
 		$res = curl_exec($curl);
 		$arrres = json_decode($res,true);
-		$this->responseNews($postObj,$arrres);
+		return $this->responseNews($postObj,$arrres);
 	} //end getNewsFromApi
 	//获取天气情况的函数
 	public function getNewsFromTianQi($postObj){
@@ -410,6 +479,6 @@ class IndexModel {
 		//实例化responseTxt模板	
 		$indexModel = new IndexModel;
 		$indexModel->responseTxt($postObj,$contents);
-	}//end getNewsFromTianQi*/
+	}//end getNewsFromTianQi
 	
 }//end class
